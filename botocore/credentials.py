@@ -22,6 +22,7 @@ import time
 from collections import namedtuple
 from copy import deepcopy
 from hashlib import sha1
+from pathlib import Path
 
 from dateutil.parser import parse
 from dateutil.tz import tzlocal, tzutc
@@ -1095,6 +1096,7 @@ class EnvProvider(CredentialProvider):
     # AWS_SESSION_TOKEN is what other AWS SDKs have standardized on.
     TOKENS = ['AWS_SECURITY_TOKEN', 'AWS_SESSION_TOKEN']
     EXPIRY_TIME = 'AWS_CREDENTIAL_EXPIRATION'
+    DEFAULT_CONTEXT_PATH = Path.cwd()
 
     def __init__(self, environ=None, mapping=None):
         """
@@ -1108,9 +1110,44 @@ class EnvProvider(CredentialProvider):
             ``session_token``.
         """
         if environ is None:
+            self._force_env_loading()
             environ = os.environ
+
         self.environ = environ
         self._mapping = self._build_mapping(mapping)
+
+    def _force_env_loading(
+            self,
+            env_file: str = ".env",
+            encoding: str = "utf-8") -> None:
+        """
+        :param env_file: Environment variables file name. (The default
+            name for the ``.env`` file.)
+        :param encoding: Encoding to be used to read the file. (The default
+            value for reading the file is ``utf-8``.)
+        """
+        context_path = self.DEFAULT_CONTEXT_PATH.joinpath(env_file)
+
+        if context_path.is_file():
+            with open(
+                file=context_path,
+                encoding=encoding
+            ) as file_env:
+                for index, line in enumerate(file_env, start=1):
+                    if line.startswith('#') or not line.strip():
+                        continue
+                    if 'export' in line:
+                        continue
+                    try:
+                        key, value = line.strip().split('=', 1)
+                        os.environ[key] = str(value)
+                    except Exception:
+                        logger.debug(
+                            "Unable to load {} file in index {}.".format(
+                                env_file,
+                                index
+                            )
+                        )
 
     def _build_mapping(self, mapping):
         # Mapping of variable name to env var name.
